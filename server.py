@@ -1,10 +1,13 @@
-from fastapi import FastAPI, HTTPException, Body, BackgroundTasks, Query
+from fastapi import FastAPI, HTTPException, Body, BackgroundTasks, Query, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import List, Optional
 import os
 import database as db
 import scraper as scraper
+import logging
+import traceback
 
 # --- FastAPI App Initialization ---
 app = FastAPI(
@@ -12,6 +15,16 @@ app = FastAPI(
     description="An API to trigger a web scraper for cars.com and manage data via WordPress REST APIs.",
     version="1.0.0"
 )
+
+# --- Global Exception Handler ---
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    tb = traceback.format_exc()
+    logging.error(f"Unhandled exception: {exc}\nTraceback:\n{tb}")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error. Please check server logs for details."}
+    )
 
 # --- CORS Configuration ---
 # Allows the WordPress frontend to communicate with this API

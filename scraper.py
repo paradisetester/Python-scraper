@@ -520,7 +520,7 @@ def scrape_cars(
         "body_styles": body_styles or [],
         "fuel_types": fuel_types or []
     }
-    logging.info("Scraping started with filters: %s", filters)
+    logging.info(f"Scraping started with filters: {filters}")
     main_driver = setup_driver()
     all_links = []
     try:
@@ -554,6 +554,8 @@ def scrape_cars(
     finally:
         main_driver.quit()
     logging.info("Total links collected: %d", len(all_links))
+    total_links = len(all_links)
+    logging.info(f"Found {total_links} car links to process.")
     scraped_data = []
     max_workers = min(4, len(all_links))
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -593,8 +595,8 @@ def scrape_cars(
                 result = future.result(timeout=60)
                 if result:
                     scraped_data.append(result)
-                if (i + 1) % 5 == 0:
-                    logging.info("Progress: %d/%d cars processed", i + 1, len(all_links))
+                if (i + 1) % 5 == 0 or (i + 1) == total_links:
+                    logging.info(f"Processed {i + 1} of {total_links} cars...")
             except Exception:
                 pass
         while not driver_queue.empty():
@@ -608,4 +610,5 @@ def scrape_cars(
         logging.info("Scraping process completed successfully! %d records updated.", len(scraped_data))
     else:
         logging.info("No data was scraped successfully.")
+    logging.info(f"Scraping complete. Total cars processed: {total_links}")
     return {"data": scraped_data} 
