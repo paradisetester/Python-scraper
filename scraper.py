@@ -7,7 +7,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import StaleElementReferenceException, TimeoutException
+from selenium.common.exceptions import StaleElementReferenceException, TimeoutException, WebDriverException
 from concurrent.futures import ThreadPoolExecutor
 import database as db
 import urllib.parse
@@ -557,6 +557,7 @@ def scrape_cars(
     total_links = len(all_links)
     logging.info(f"Found {total_links} car links to process.")
     scraped_data = []
+    errors = []
     max_workers = min(4, len(all_links))
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         from queue import Queue
@@ -565,15 +566,28 @@ def scrape_cars(
             try:
                 driver = setup_driver()
                 driver_queue.put(driver)
-            except Exception:
-                pass
+            except Exception as e:
+                logging.error(f"Error setting up driver: {e}")
         def scrape_with_driver(link, car_index):
             driver = None
             try:
                 driver = driver_queue.get(timeout=10)
                 result = scrape_car_details(driver, link)
+                if result and 'error' in result:
+                    logging.error(f"Error scraping {link}: {result['error']}")
+                    errors.append({"link": link, "error": result['error']})
                 return result if result and 'error' not in result else None
-            except Exception:
+            except TimeoutException as e:
+                logging.error(f"Timeout scraping {link}: {e}")
+                errors.append({"link": link, "error": f"Timeout: {str(e)}"})
+                return None
+            except WebDriverException as e:
+                logging.error(f"WebDriver error scraping {link}: {e}")
+                errors.append({"link": link, "error": f"WebDriver error: {str(e)}"})
+                return None
+            except Exception as e:
+                logging.error(f"Unexpected error scraping {link}: {e}")
+                errors.append({"link": link, "error": f"Unexpected error: {str(e)}"})
                 return None
             finally:
                 if driver:
@@ -597,8 +611,15 @@ def scrape_cars(
                     scraped_data.append(result)
                 if (i + 1) % 5 == 0 or (i + 1) == total_links:
                     logging.info(f"Processed {i + 1} of {total_links} cars...")
-            except Exception:
-                pass
+            except TimeoutException as e:
+                logging.error(f"Timeout in future for car {i+1}: {e}")
+                errors.append({"link": all_links[i], "error": f"Timeout in future: {str(e)}"})
+            except WebDriverException as e:
+                logging.error(f"WebDriver error in future for car {i+1}: {e}")
+                errors.append({"link": all_links[i], "error": f"WebDriver error in future: {str(e)}"})
+            except Exception as e:
+                logging.error(f"Unexpected error in future for car {i+1}: {e}")
+                errors.append({"link": all_links[i], "error": f"Unexpected error in future: {str(e)}"})
         while not driver_queue.empty():
             try:
                 driver = driver_queue.get_nowait()
@@ -611,4 +632,6 @@ def scrape_cars(
     else:
         logging.info("No data was scraped successfully.")
     logging.info(f"Scraping complete. Total cars processed: {total_links}")
-    return {"data": scraped_data} 
+    if errors:
+        logging.error(f"Encountered {len(errors)} errors during scraping.")
+    return {"data": scraped_data, "errors": errors} 
